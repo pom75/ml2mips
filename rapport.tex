@@ -1,0 +1,289 @@
+\documentclass[a4paper, 11pt]{report}
+
+\addtolength{\hoffset}{-1cm}
+\addtolength{\textwidth}{2cm}
+
+\usepackage[utf8]{inputenc}
+\usepackage[frenchb]{babel}
+\usepackage[T1]{fontenc}
+
+\usepackage{tikz}
+
+\usepackage{csquotes}
+
+\usepackage{listings}
+\usepackage{color}
+\definecolor{lightgray}{rgb}{.9,.9,.9}
+\definecolor{darkgray}{rgb}{.4,.4,.4}
+\definecolor{purple}{rgb}{0.65, 0.12, 0.82}
+
+\lstnewenvironment{OCaml}
+                  {\lstset{
+                      language=[Objective]Caml,
+                      breaklines=true,
+                      commentstyle=\color{purple},
+                      stringstyle=\color{red},
+                      identifierstyle=\ttfamily,
+                      keywordstyle=\color{blue},
+                      basicstyle=\footnotesize,
+                      xleftmargin=0.15\textwidth
+                    }
+                  }
+                  {}
+\lstnewenvironment{C}
+                  {\lstset{
+                      language=C,
+                      breaklines=true,
+                      commentstyle=\color{purple},
+                      stringstyle=\color{red},
+                      identifierstyle=\ttfamily,
+                      keywordstyle=\color{blue},
+                      basicstyle=\footnotesize
+                    }
+                  }
+                  {}
+
+\begin{document}
+
+\chapter{Projet de CA : \emph{ml2mips}}
+
+Béatrice CARRE
+
+Marwan GHANEM
+
+Stéphane FERREIRA
+
+\section*{Introduction}
+Le projet consiste à utiliser un compilateur de mini-ML vers Java, pour créer un compilateur de mini-ML vers MIPS.
+
+\section{Présentation}
+Le travail à réaliser est de modifier le code fourni du compilateur
+ml2java, pour en faire un compilateur ml2mips.
+Les étapes d'analyse lexicale et syntaxique du langage mini-ML nous étaient
+donc founies. Restait à faire le compilateur du langage intermédiaire
+vers MIPS. 
+Pour cela, nous avons dû commencer par ces différentes étapes :
+\begin{itemize}
+\item parcourir le code fourni
+\item comprendre et prendre en main son architecture
+\item en filtrer le plus utile et ce qui sera à modifier
+\item approfondir nos connaissance en MIPS
+\item pour chaque expression/instruction, faire un schéma de compilation
+\end{itemize}
+De ces étapes, nous avons pu en tirer assez d'informations pour
+commencer l'implantation.
+
+\section{brève présentation du mini-ml}
+Pour les tests, il était important de comprendre les différences avec
+le OCaml. Pour notre bien, ce langage était très limité.
+Les mot-clés (tokens) utilisés pour ce projets sont :
+\begin{OCaml}
+else, function, if, in, let, rec, ref, then
+\end{OCaml}
+ainsi que tous les symboles habituels :
+\begin{OCaml}
+"=","(",",","->","::", etc.
+\end{OCaml}
+Voici quelques exemples de syntaxe du mini-ml :
+\begin{OCaml}
+let rec sub = function x -> sub;;
+\end{OCaml}
+est autorisé, mais pas 
+\begin{OCaml}
+let f = sub;;
+\end{OCaml}
+De plus, chaque instruction doit obligatoirement finir par ";;", comme
+lors des évaluations dans le top-level.
+ 
+\section{Le langage intermédiaire}
+
+Mais pour l'implémentation de notre générateur de code, il a fallut
+surtout bien prendre en main le langage intermédiaire, décrit dans
+langinter.ml dont voici un extrait :
+\begin{OCaml}
+type li_type = 
+  ALPHA
+| CONSTTYPE of li_const_type
+| PAIRTYPE
+| LISTTYPE
+| FUNTYPE
+| REFTYPE
+
+type li_const = 
+  INT of int
+| FLOAT of float
+| BOOL of bool
+| STRING of string
+| EMPTYLIST
+| UNIT
+
+type li_instr = 
+  CONST of li_const
+| VAR   of string * li_type
+| IF  of li_instr * li_instr * li_instr
+| PRIM of (string * li_type) * li_instr list
+| APPLY of li_instr * li_instr
+| RETURN of li_instr
+| AFFECT of string * li_instr
+| BLOCK of (string  * li_type * li_instr) list  * li_instr
+| FUNCTION of string * li_type * int * (string list * li_type) * li_instr 
+\end{OCaml}
+
+\section{Schémas de compilation}
+Après réflexion en groupe, nous avons décidé de schémas de
+compilation, indiquant comment traiter chaque instruction du langage
+intermédiaire.
+
+Nous considérons dans ces schémas de compilation le contexte suivant :
+\begin{itemize}
+\item fr (:bool) la pésence d'un type retour
+\item sd (:string) le nom de la dernière variable mise dans la pile ???
+\item nb (:int) la profondeur dans un bloc (+2 à chaque ? ) ???
+\item ainsi que des variables globales du programme :
+  \begin{itemize}
+   \item count (:int ref) un compteur de variables 
+   \item tabvar (:int list ref) la liste des variables globales
+   \item dollar2(3) (:bool ref) vrai si le registre \$2(3) est est le
+     dernier utilisé pour les calculs intermédiaires.
+\end{itemize}
+\end{itemize}
+La génération de code se fait en 3 passes sur l'AST explicitées ci-dessous.
+
+\subsection{la fonction prod\_GV}
+Pour commencer, la production de variables globales, dans
+\emph{prod\_GV ast\_li} :
+
+
+ $[\![ VAR(v,t) ]\!]
+_{(fr=false,sd="",nb=0),count,tabvar,dollar2,dollar3 | v\notin tabvar, t\neq FUNTYPE} $
+$\longrightarrow$
+\begin{OCaml}
+tabVar := v::!tabVar;  
+out_start ("\n"^v^ ":") 0 ;  
+out_start (string_of_type t) 3; 
+\end{OCaml}
+
+
+ $[\![ CONST(INT i) ]\!]
+_{(fr=false,sd="v",nb=0),count,tabvar,dollar2,dollar3} $
+$\longrightarrow$
+\begin{OCaml}
+out ((string_of_int i));
+count := !count + 1
+\end{OCaml}
+
+
+ $[\![ AFFECT(var, instr) ]\!]
+_{(fr,sd=,nb),count,tabvar,dollar2,dollar3} $
+$\longrightarrow$
+\begin{center}
+ $[\![ i ]\!]
+_{(fr=false,sd=var,nb),count,tabvar,dollar2,dollar3} $
+\end{center}
+
+ $[\![ PRIM((s,lt),instr\_list) ]\!]
+_{(fr=false,sd="v",nb),count,tabvar,dollar2,dollar3} $
+$\longrightarrow$
+\begin{OCaml}
+let res = List.
+out ((string_of_int i));
+count := !count + 1
+\end{OCaml}
+
+ $[\![ BLOCK(list, instr) ]\!]
+_{(fr,sd=,nb),count,tabvar,dollar2,dollar3} $
+$\longrightarrow$
+\begin{center}
+List.iter (fun (s,li\_t,i) -> $[\![ i ]\!]
+_{(fr,sd=,nb),count,tabvar,dollar2,dollar3} $) list;
+
+$[\![ instr ]\!]
+_{(fr,sd=,nb),count,tabvar,dollar2,dollar3} $
+\end{center}
+
+\subsection{la fonction prod\_main}
+La production du main, dans \emph{prod\_main ast\_li}
+Pour cette partie, nous ajoutons les variables globales suivantes dans
+l'environnement :
+\begin{itemize}
+\item etiqf (:string), qui est le nom de la fonction appelée
+\item tabvarf (:(string*li\_type) list)  , stock dans un couple !! TODO !!
+\item iscreated(:bool), vrai si 
+\end{itemize}
+$[\![ CONST(c) ]\!]
+_{(fr,sd=,nb),tabvarF} $
+$\longrightarrow$
+\begin{OCaml}
+  if nb >1 then
+  tabVarF := (c,"")::!tabVarF;
+\end{OCaml}
+     
+$[\![ VAR(v,FUNTYPE) ]\!]
+_{(fr,sd=,nb),etiqf,tabvarF} $
+$\longrightarrow$
+\begin{OCaml}
+  etiqf := (String.sub v ((String.index v '.')+1) (((String.length v) - (String.index v '.'))-1) );
+  isCreat := true;
+  tabVarF := [];
+\end{OCaml}
+
+$[\![ VAR(v,t) ]\!]
+_{(fr,sd,nb),etiqf,tabvarF} $
+$\longrightarrow$
+\begin{OCaml}
+  if nb > 1 then
+  tabVarF := (UNIT,v) ::!tabVarF;
+\end{OCaml}
+
+$[\![ AFFECT(v,i) ]\!]
+_{(fr,sd,nb),etiqf,tabvarF} $
+$\longrightarrow$
+\begin{OCaml}
+ prod\_call\_func2 (false,"pp",nb+1) i;
+\end{OCaml}
+
+$[\![ BLOCK(l,i) ]\!]
+_{(fr,sd,nb),etiqf,tabvarF} $
+$\longrightarrow$
+\begin{OCaml}
+  List.iter (fun (v,t,i) -> prod\_call\_func2 (false,sd,nb+1) i) l;
+  prod\_call\_func2 (fr,sd,nb+1) i;
+\end{OCaml}
+
+$[\![ BLOCK(l,i) ]\!]
+_{(fr,sd,nb),etiqf,tabvarF,isCreat} $
+$\longrightarrow$
+\begin{OCaml}
+  if !isCreat then(
+  tabVarF := List.rev !tabVarF;
+  prod\_fun\_called !etiqf !tabVarF;
+  tabVarF := [];
+  isCreat := false
+  )
+\end{OCaml} 
+
+
+\subsection{la fonction prod\_func}
+La production des ??? de fonction, dans \emph{prod\_func ast\_li}
+
+
+%out "\underbrace{   }_{nb espaces}"
+\section{Difficultés et choix d'implémentation}
+Lors des tests effectués, nous avons découvert que l'on peut
+\begin{itemize}
+\item différenciation appel fun et appel de func dans une autre CAR
+  derniere instruction 
+\item problème de synchronasation entre var pile et var registre.
+\item 
+\end{itemize}
+
+\section{Conclusion}
+
+\section*{Références}
+\begin{itemize}
+\item 
+\item 
+\item 
+\end{itemize}
+
+\end{document}

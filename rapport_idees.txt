@@ -1,0 +1,8 @@
+
+difficultés :
+- comprendre et maitriser subtilités de MIPS
+- comprendre comment transformer les différentes instructions en mips :
+  var, fonction (.data) 
+- gestions variables : mem temp limitée
+- 
+
