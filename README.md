@@ -1,3 +1,5 @@
+# ml2mips
+
 Hacking ml2java cross-compiler to produce MIPS assembly file
 
 # Usage
@@ -5,4 +7,4 @@ Hacking ml2java cross-compiler to produce MIPS assembly file
 Â§TODO
 
 # Authors
-StŽphane Ferreira, Mar
+StŽéphane Ferreira, Marwan Ghanem
